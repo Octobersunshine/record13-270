@@ -281,6 +281,130 @@ def test_dedup_preserves_extension():
         print("✓ test_dedup_preserves_extension  passed")
 
 
+def test_preview_returns_list_of_dicts():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        create_test_files(tmp_path, ["a.txt", "b.txt"])
+
+        renamer = BatchRenamer(directory=str(tmp_path), base_name="doc", index_padding=3)
+        result = renamer.preview()
+
+        assert isinstance(result, list)
+        assert len(result) == 2
+        assert "source_name" in result[0]
+        assert "target_name" in result[0]
+        assert "source_path" in result[0]
+        assert "target_path" in result[0]
+        assert result[0]["source_name"] == "a.txt"
+        assert result[0]["target_name"] == "doc_001.txt"
+        assert result[1]["source_name"] == "b.txt"
+        assert result[1]["target_name"] == "doc_002.txt"
+        print("✓ test_preview_returns_list_of_dicts  passed")
+
+
+def test_format_preview_simple_style():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        create_test_files(tmp_path, ["apple.txt", "banana.txt"])
+
+        renamer = BatchRenamer(directory=str(tmp_path))
+        output = renamer.format_preview(table_style="simple")
+
+        assert "源文件" in output
+        assert "目标文件" in output
+        assert "apple.txt" in output
+        assert "banana.txt" in output
+        assert "file_01.txt" in output
+        assert "file_02.txt" in output
+        assert "->" in output
+        print("✓ test_format_preview_simple_style  passed")
+
+
+def test_format_preview_markdown_style():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        create_test_files(tmp_path, ["x.jpg", "y.jpg"])
+
+        renamer = BatchRenamer(directory=str(tmp_path))
+        output = renamer.format_preview(table_style="markdown")
+
+        assert "| # | 源文件 | 目标文件 |" in output
+        assert "|---|--------|----------|" in output
+        assert "| 1 | x.jpg | file_01.jpg |" in output
+        assert "| 2 | y.jpg | file_02.jpg |" in output
+        print("✓ test_format_preview_markdown_style  passed")
+
+
+def test_format_preview_no_index():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        create_test_files(tmp_path, ["a.txt"])
+
+        renamer = BatchRenamer(directory=str(tmp_path))
+        output = renamer.format_preview(show_index=False, table_style="simple")
+
+        assert "源文件" in output
+        assert "目标文件" in output
+        assert " 1 " not in output
+        print("✓ test_format_preview_no_index  passed")
+
+
+def test_format_preview_show_path():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        create_test_files(tmp_path, ["test.txt"])
+
+        renamer = BatchRenamer(directory=str(tmp_path))
+        output = renamer.format_preview(show_path=True, table_style="simple")
+
+        assert "test.txt" in output
+        assert "file_01.txt" in output
+        assert str(tmp_path) in output
+        print("✓ test_format_preview_show_path  passed")
+
+
+def test_format_preview_empty():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        create_test_files(tmp_path, ["a.txt", "b.txt"])
+
+        renamer = BatchRenamer(directory=str(tmp_path), pattern=r"nonexistent_pattern")
+        output = renamer.format_preview()
+
+        assert output == "没有找到需要重命名的文件。"
+
+        renamer2 = BatchRenamer(directory=str(tmp_path), extension="xyz")
+        output2 = renamer2.format_preview()
+        assert output2 == "没有找到需要重命名的文件。"
+        print("✓ test_format_preview_empty  passed")
+
+
+def test_preview_does_not_modify_files():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        create_test_files(tmp_path, ["photo.jpg", "image.png"])
+
+        before = sorted(p.name for p in tmp_path.iterdir())
+
+        renamer = BatchRenamer(directory=str(tmp_path))
+        renamer.preview()
+        renamer.format_preview()
+
+        after = sorted(p.name for p in tmp_path.iterdir())
+        assert before == after
+        print("✓ test_preview_does_not_modify_files  passed")
+
+
+def test_rename_operation_to_dict():
+    op = RenameOperation(source=Path("/src/old.txt"), target=Path("/src/new.txt"))
+    d = op.to_dict()
+    assert d["source_name"] == "old.txt"
+    assert d["target_name"] == "new.txt"
+    assert "old.txt" in d["source_path"]
+    assert "new.txt" in d["target_path"]
+    print("✓ test_rename_operation_to_dict  passed")
+
+
 if __name__ == "__main__":
     test_basic_sequential_rename()
     test_custom_base_name_and_padding()
@@ -300,4 +424,12 @@ if __name__ == "__main__":
     test_execute_with_existing_target_no_error()
     test_dedup_between_plan_targets()
     test_dedup_preserves_extension()
+    test_preview_returns_list_of_dicts()
+    test_format_preview_simple_style()
+    test_format_preview_markdown_style()
+    test_format_preview_no_index()
+    test_format_preview_show_path()
+    test_format_preview_empty()
+    test_preview_does_not_modify_files()
+    test_rename_operation_to_dict()
     print("\n🎉 所有测试通过！")

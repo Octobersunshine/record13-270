@@ -3,7 +3,7 @@ import re
 import argparse
 from pathlib import Path
 from dataclasses import dataclass
-from typing import List, Optional, Callable
+from typing import List, Optional, Callable, Dict
 
 
 @dataclass
@@ -13,6 +13,14 @@ class RenameOperation:
 
     def __str__(self):
         return f"{self.source.name}  ->  {self.target.name}"
+
+    def to_dict(self) -> Dict[str, str]:
+        return {
+            "source_name": self.source.name,
+            "target_name": self.target.name,
+            "source_path": str(self.source),
+            "target_path": str(self.target),
+        }
 
 
 class BatchRenamer:
@@ -186,6 +194,70 @@ class BatchRenamer:
         resolved = intermediate_ops + resolved + final_ops
         return resolved
 
+    def preview(self) -> List[Dict[str, str]]:
+        operations = self.plan()
+        return [op.to_dict() for op in operations]
+
+    def format_preview(
+        self,
+        show_path: bool = False,
+        show_index: bool = True,
+        table_style: str = "simple",
+    ) -> str:
+        operations = self.plan()
+        if not operations:
+            return "没有找到需要重命名的文件。"
+
+        lines: List[str] = []
+
+        if table_style == "simple":
+            max_src_len = max(len(op.source.name if not show_path else str(op.source)) for op in operations)
+            max_tgt_len = max(len(op.target.name if not show_path else str(op.target)) for op in operations)
+
+            if show_index:
+                idx_width = len(str(len(operations)))
+                header = f"  #{'':<{idx_width-1}}  源文件{'':<{max_src_len-4}}  目标文件{'':<{max_tgt_len-5}}"
+                sep = f"  {'-'*idx_width}  {'-'*max_src_len}  {'-'*max_tgt_len}"
+                lines.append(header)
+                lines.append(sep)
+                for i, op in enumerate(operations, 1):
+                    src = op.source.name if not show_path else str(op.source)
+                    tgt = op.target.name if not show_path else str(op.target)
+                    lines.append(f"  {i:>{idx_width}}  {src:<{max_src_len}}  ->  {tgt}")
+            else:
+                header = f"源文件{'':<{max_src_len-4}}  目标文件{'':<{max_tgt_len-5}}"
+                sep = f"{'-'*max_src_len}  {'-'*max_tgt_len}"
+                lines.append(header)
+                lines.append(sep)
+                for op in operations:
+                    src = op.source.name if not show_path else str(op.source)
+                    tgt = op.target.name if not show_path else str(op.target)
+                    lines.append(f"{src:<{max_src_len}}  ->  {tgt}")
+
+        elif table_style == "markdown":
+            if show_index:
+                lines.append("| # | 源文件 | 目标文件 |")
+                lines.append("|---|--------|----------|")
+                for i, op in enumerate(operations, 1):
+                    src = op.source.name if not show_path else str(op.source)
+                    tgt = op.target.name if not show_path else str(op.target)
+                    lines.append(f"| {i} | {src} | {tgt} |")
+            else:
+                lines.append("| 源文件 | 目标文件 |")
+                lines.append("|--------|----------|")
+                for op in operations:
+                    src = op.source.name if not show_path else str(op.source)
+                    tgt = op.target.name if not show_path else str(op.target)
+                    lines.append(f"| {src} | {tgt} |")
+
+        else:
+            for i, op in enumerate(operations, 1):
+                src = op.source.name if not show_path else str(op.source)
+                tgt = op.target.name if not show_path else str(op.target)
+                lines.append(f"{i}. {src} -> {tgt}")
+
+        return "\n".join(lines)
+
     def execute(
         self,
         dry_run: bool = False,
@@ -261,6 +333,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-r", "--recursive", action="store_true", help="递归处理子目录")
 
     parser.add_argument("-n", "--dry-run", action="store_true", help="预览模式，不实际重命名")
+    parser.add_argument("--preview-style", choices=["simple", "markdown", "list"], default="simple",
+                        help="预览表格样式 (默认: simple)")
+    parser.add_argument("--show-path", action="store_true", help="预览时显示完整路径")
     parser.add_argument("-q", "--quiet", action="store_true", help="静默模式，减少输出")
 
     return parser
@@ -296,8 +371,11 @@ def main():
     if not args.quiet:
         mode = "【预览模式】" if args.dry_run else "【执行模式】"
         print(f"{mode} 将重命名 {len(operations)} 个文件:\n")
-        for i, op in enumerate(operations, 1):
-            print(f"  {i:>3}. {op}")
+        print(renamer.format_preview(
+            show_path=args.show_path,
+            show_index=True,
+            table_style=args.preview_style,
+        ))
         print()
 
     if args.dry_run:
