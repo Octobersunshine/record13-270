@@ -103,16 +103,62 @@ class BatchRenamer:
 
     def plan(self) -> List[RenameOperation]:
         files = self.collect_files()
+        source_set = {f.resolve() for f in files}
+        preoccupied: set = set()
+        if self.recursive:
+            iterator = self.directory.rglob("*")
+        else:
+            iterator = self.directory.iterdir()
+        for entry in iterator:
+            if entry.is_file() and entry.resolve() not in source_set:
+                preoccupied.add(entry.resolve())
+
         operations: List[RenameOperation] = []
+        used_targets: set = set()
         current_index = self.start_index
 
         for file_path in files:
             new_path = self.generate_new_name(file_path, current_index)
+            new_path = self._deduplicate_target(
+                new_path, file_path, preoccupied, used_targets
+            )
             if new_path != file_path:
                 operations.append(RenameOperation(source=file_path, target=new_path))
-            current_index += 1
+                used_targets.add(new_path.resolve())
+                current_index += 1
+            else:
+                preoccupied.add(file_path.resolve())
 
         return operations
+
+    def _deduplicate_target(
+        self,
+        target: Path,
+        original: Path,
+        preoccupied: set,
+        used_targets: set,
+    ) -> Path:
+        candidate = target.resolve()
+        if candidate == original.resolve():
+            return target
+        if candidate not in preoccupied and candidate not in used_targets:
+            return target
+
+        stem = target.stem
+        ext = target.suffix
+        parent = target.parent
+        counter = 1
+
+        while True:
+            new_name = f"{stem}{self.separator}{counter}{ext}"
+            candidate_path = (parent / new_name).resolve()
+            if (
+                candidate_path not in preoccupied
+                and candidate_path not in used_targets
+                and candidate_path != original.resolve()
+            ):
+                return parent / new_name
+            counter += 1
 
     @staticmethod
     def _resolve_conflicts(operations: List[RenameOperation]) -> List[RenameOperation]:

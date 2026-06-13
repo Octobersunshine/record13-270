@@ -191,6 +191,96 @@ def test_invalid_directory():
         print("✓ test_invalid_directory  passed")
 
 
+def test_existing_target_file_auto_dedup():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        create_test_files(tmp_path, ["photo.jpg", "file_01.jpg"])
+
+        renamer = BatchRenamer(directory=str(tmp_path), base_name="file", start_index=1, index_padding=2, extension="jpg")
+        ops = renamer.plan()
+
+        assert len(ops) == 1
+        assert ops[0].source.name == "photo.jpg"
+        assert ops[0].target.name == "file_01_1.jpg"
+        print("✓ test_existing_target_file_auto_dedup  passed")
+
+
+def test_multiple_existing_targets_dedup():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        create_test_files(
+            tmp_path,
+            ["apple.txt", "banana.txt", "cherry.txt", "file_01.txt", "file_02.txt", "file_02_1.txt"],
+        )
+
+        renamer = BatchRenamer(
+            directory=str(tmp_path),
+            base_name="file",
+            start_index=1,
+            index_padding=2,
+            pattern=r"^(apple|banana|cherry)\.txt$",
+        )
+        ops = renamer.plan()
+
+        target_names = sorted(op.target.name for op in ops)
+        assert target_names == ["file_01_1.txt", "file_02_2.txt", "file_03.txt"]
+        print("✓ test_multiple_existing_targets_dedup  passed")
+
+
+def test_execute_with_existing_target_no_error():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        create_test_files(tmp_path, ["photo_a.jpg", "photo_b.jpg", "file_01.jpg"])
+
+        renamer = BatchRenamer(
+            directory=str(tmp_path),
+            base_name="file",
+            start_index=1,
+            index_padding=2,
+            pattern=r"^photo_",
+        )
+        renamer.execute(dry_run=False)
+
+        result_files = sorted(p.name for p in tmp_path.iterdir())
+        assert "file_01.jpg" in result_files
+        assert "file_01_1.jpg" in result_files
+        assert "file_02.jpg" in result_files
+        print("✓ test_execute_with_existing_target_no_error  passed")
+
+
+def test_dedup_between_plan_targets():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        create_test_files(tmp_path, ["z.txt", "y.txt", "x.txt"])
+
+        renamer = BatchRenamer(directory=str(tmp_path), base_name="file", start_index=1, index_padding=2)
+        renamer.execute(dry_run=False)
+
+        result_files = sorted(p.name for p in tmp_path.iterdir())
+        assert result_files == ["file_01.txt", "file_02.txt", "file_03.txt"]
+        print("✓ test_dedup_between_plan_targets  passed")
+
+
+def test_dedup_preserves_extension():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        create_test_files(tmp_path, ["photo.png", "file_01.png", "other.jpg"])
+
+        renamer = BatchRenamer(
+            directory=str(tmp_path),
+            base_name="file",
+            start_index=1,
+            index_padding=2,
+            extension="png",
+        )
+        ops = renamer.plan()
+
+        assert len(ops) == 1
+        assert ops[0].source.name == "photo.png"
+        assert ops[0].target.name == "file_01_1.png"
+        print("✓ test_dedup_preserves_extension  passed")
+
+
 if __name__ == "__main__":
     test_basic_sequential_rename()
     test_custom_base_name_and_padding()
@@ -205,4 +295,9 @@ if __name__ == "__main__":
     test_regex_pattern_match()
     test_conflict_resolution()
     test_invalid_directory()
+    test_existing_target_file_auto_dedup()
+    test_multiple_existing_targets_dedup()
+    test_execute_with_existing_target_no_error()
+    test_dedup_between_plan_targets()
+    test_dedup_preserves_extension()
     print("\n🎉 所有测试通过！")
